@@ -1,50 +1,59 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 	"log"
 	"os"
 
-	"mti-cm-be-vendor/routes" // Adjust the import path as necessary
-
-	"github.com/cengsin/oracle"
 	"github.com/joho/godotenv"
+	go_ora "github.com/sijms/go-ora/v2"
+	"gorm.io/driver/sqlserver"
+	"gorm.io/gorm"
+
+	"mti-cm-be-vendor/routes" // Pastikan jalur impor sesuai dengan struktur proyek Anda
+
 	swaggerfiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
-
-	"gorm.io/gorm"
 )
 
 func main() {
-	// Load environment variables from .env file
+	// Memuat variabel lingkungan dari file .env
 	if err := godotenv.Load(); err != nil {
 		log.Fatal("Error loading .env file:", err)
 	}
 
-	// Retrieve database credentials from environment variables
-	dbUser := os.Getenv("DB_USER")
-	dbPassword := os.Getenv("DB_PASSWORD")
+	// Mendapatkan nilai dari variabel lingkungan
 	dbHost := os.Getenv("DB_HOST")
-	dbPort := os.Getenv("DB_PORT")
-	dbService := os.Getenv("DB_SERVICE")
+	dbServiceName := os.Getenv("DB_SERVICE_NAME")
+	dbUsername := os.Getenv("DB_USERNAME")
+	dbPassword := os.Getenv("DB_PASSWORD")
 
-	// Construct DSN (Data Source Name)
-	dsn := fmt.Sprintf("%s/%s@%s:%s/%s", dbUser, dbPassword, dbHost, dbPort, dbService)
-
-	// Connect to the Oracle database using GORM with cengsin/oracle
-	db, err := gorm.Open(oracle.Open(dsn), &gorm.Config{})
+	// Construct the Oracle connection string
+	connStr := go_ora.BuildUrl(dbHost, 2230, dbServiceName, dbUsername, dbPassword, nil)
+	conn, err := sql.Open("oracle", connStr)
 	if err != nil {
-		log.Fatal("Failed to connect to database:", err)
+		log.Fatal("Failed to connect to Oracle", err)
+	}
+	// check for error
+	fmt.Println("Connected to Oracle database!")
+
+	// Mengkonversi koneksi *sql.DB menjadi *gorm.DB
+	gormDB, err := gorm.Open(sqlserver.New(sqlserver.Config{
+		Conn: conn,
+	}), &gorm.Config{})
+	if err != nil {
+		log.Fatal("Failed to initialize GORM with Oracle connection:", err)
 	}
 
-	// Setup HTTP routes
-	router := routes.SetupRoutes(db)
+	// Mengatur rute HTTP
+	router := routes.SetupRoutes(gormDB)
 
-	// Setup Swagger
+	// Mengatur Swagger
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerfiles.Handler,
 		ginSwagger.URL("http://localhost:7000/swagger/doc.json"),
 		ginSwagger.DefaultModelsExpandDepth(-1)))
 
-	// Start HTTP server
+	// Menjalankan server HTTP
 	log.Fatal(router.Run(":7000"))
 }
